@@ -12,19 +12,25 @@ public abstract class Main {
 	}
 	
     @UserDefined(user = "iasonas")
-	private static class Greeter {
+	private static class Greeter implements Runnable {
 	    private final String MSG = "Hello, World!";
 	    private Printer ms = new MessageService<String>(MSG);
+        private Thread thread = new Thread(this);
 	    
 	    public Greeter () {
 	    }
-	    
-	    public void greet () {
-    	    try {
+
+        @Override
+        public void run () {
+            try {
     		    ms.print();
     		} catch (InvalidMessageException e) {
                 System.out.println("Cannot greet. "+e.toString());
     		}
+        }
+	    
+	    public void greet () {
+    	    thread.start();
 	    }
 	};
 };
@@ -32,12 +38,16 @@ public abstract class Main {
 @UserDefined(user = "iasonas")
 class AnnotationApplyer {
     public static void check () {
-        checkUserException(Main.class, AnnotationApplyer.class, MessageService.class, UserDefined.class);
-        checkUserException(UserException.class, Printer.class, InvalidMessageException.class);
-        
+        checkUserException(CheckType.STRICT, Main.class, AnnotationApplyer.class, MessageService.class, UserDefined.class);
+        checkUserException(CheckType.STRICT, UserException.class, Printer.class, InvalidMessageException.class);
     }
 
-    public static void checkUserException (Class<?>... classes) {
+    enum CheckType {
+        STRICT,
+        LAX
+    }
+
+    public static void checkUserException (CheckType ct, Class<?>... classes) {
         for (Class<?> clazz : classes) {
             if (!clazz.isAnnotationPresent(UserException.class)) {
                 continue;
@@ -45,70 +55,45 @@ class AnnotationApplyer {
 
             if (!Exception.class.isAssignableFrom(clazz)) {
                 System.out.println("Error: "+clazz.getName()+" does not extend java.lang.Exception");
+                if (ct==CheckType.STRICT) {
+                    System.exit(0);
+                }
             }
         }
     }
-}
+};
 
-@Target(ElementType.TYPE)
-@Retention(RetentionPolicy.RUNTIME)
-@interface UserException {
-
+record MessageService <T> (T message) implements Printer {
+    @Override
+    public synchronized void print () throws InvalidMessageException {
+        if (message==null) {
+            throw new InvalidMessageException("message is null");
+        }
+        System.out.println(message);
+    }
 }
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 @interface UserDefined {
     String user() default "Not specified";
-}
-
-class MessageService <T> implements Runnable, Printer {
-    private T message;
-    private final Thread thread = new Thread(this);
-    private int printCounter;
-    
-    public MessageService () {   
-    }
-    
-    public MessageService (T message) {
-        this.message = message;
-    }
-
-    public T getMessage () {
-        return message;
-    }
-    
-    public void setMessage (T aMsg) {
-        this.message = aMsg;
-    }
-
-    public int getTimes () {
-        return printCounter;
-    }
-    
-    @Override
-    public void run () {
-        System.out.println(message.toString());
-        printCounter++;
-    }
-    
-    @Override
-    public synchronized void print () throws InvalidMessageException {
-        if (message==null) {
-            throw new InvalidMessageException("message is null");
-        }
-        thread.start();
-    }
 };
 
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@interface UserException {
+
+};
+
+@FunctionalInterface
 interface Printer {
     void print() throws InvalidMessageException;
 };
 
-@UserException // well placed annotation for checking
+@UserException
 class InvalidMessageException extends Exception {
     public InvalidMessageException (String m) {
         super(m);
         System.exit(0);
     }
-}
+};
